@@ -71,9 +71,11 @@ jobs:
           const reportPath = '.typespec-json-schema-validator/canary/report.json';
           const authoredPath = 'contracts/peer-authority-canary/json-schema/authored.schema.json';
           const generatedPath = '.typespec-json-schema-validator/canary/generated/typespec.generated.schema.json';
-          const [ir, report, authoredReal, generatedReal] = await Promise.all([
+          const [ir, report, authored, generated, authoredReal, generatedReal] = await Promise.all([
             readFile(irPath, 'utf8').then(JSON.parse),
             readFile(reportPath, 'utf8').then(JSON.parse),
+            readFile(authoredPath, 'utf8').then(JSON.parse),
+            readFile(generatedPath, 'utf8').then(JSON.parse),
             realpath(authoredPath),
             realpath(generatedPath),
           ]);
@@ -91,11 +93,46 @@ jobs:
           if (ir.admission?.requirements?.generatedSchemaComparison !== true) {
             throw new Error('generated Schema B comparison is not a required admission invariant');
           }
+          if (report.status !== 'passed' || report.zeroUnexplainedFindings !== true) {
+            throw new Error(`positive parity report is not clean: ${report.status}`);
+          }
+          if (report.authorities?.typespec?.authority !== 'independently-authored') {
+            throw new Error('report does not preserve TypeSpec as an independent authority');
+          }
+          if (report.authorities?.jsonSchema?.authority !== 'independently-authored') {
+            throw new Error('report does not preserve JSON Schema as an independent authority');
+          }
+          if (report.authorities?.typespec?.generatedJsonSchemaRole !== 'comparison-evidence-only') {
+            throw new Error('TypeSpec-generated Schema B is not marked comparison-only evidence');
+          }
+          if (report.authorities?.precedence !== 'none') {
+            throw new Error(`unexpected authority precedence: ${report.authorities?.precedence}`);
+          }
           if (report.coverage?.typespecGeneratedJsonSchemaComparison !== true) {
             throw new Error('report does not prove TypeSpec-generated Schema B comparison');
           }
           if (report.coverage?.differentialInstanceValidation !== true) {
             throw new Error('report does not prove differential instance validation');
+          }
+          if (report.coverage?.sourceMutationCheck !== true) {
+            throw new Error('report does not prove authored-source immutability during check');
+          }
+          const counts = report.counts ?? {};
+          if (!(counts.typespecDeclarations > 0)) {
+            throw new Error(`missing TypeSpec declaration inventory: ${JSON.stringify(counts)}`);
+          }
+          if (counts.typespecDeclarations !== counts.generatedDeclarations || counts.generatedDeclarations !== counts.authoredDeclarations) {
+            throw new Error(`peer declaration counts disagree: ${JSON.stringify(counts)}`);
+          }
+          const summary = report.differential?.summary ?? {};
+          if (!(summary.probesEvaluated > 0) || summary.divergences !== 0 || summary.refusals !== 0) {
+            throw new Error(`differential proof is incomplete: ${JSON.stringify(summary)}`);
+          }
+          if (authored.$schema !== 'https://json-schema.org/draft/2020-12/schema') {
+            throw new Error(`authored Schema A is not Draft 2020-12: ${authored.$schema}`);
+          }
+          if (generated.$schema !== 'https://json-schema.org/draft/2020-12/schema') {
+            throw new Error(`generated Schema B is not Draft 2020-12: ${generated.$schema}`);
           }
           if (authoredReal === generatedReal) {
             throw new Error('authored Schema A and generated Schema B resolve to the same file');
@@ -137,6 +174,7 @@ jobs:
           import { readFile } from 'node:fs/promises';
           const report = JSON.parse(await readFile('.typespec-json-schema-validator/typespec-drift/report.json', 'utf8'));
           if (report.status !== 'stopped_for_evaluation') throw new Error(`unexpected TypeSpec drift status: ${report.status}`);
+          if (!Array.isArray(report.findings) || report.findings.length === 0) throw new Error('TypeSpec-only drift produced no findings');
           NODE
 
       - name: Prepare JSON-Schema-only split-lane drift
@@ -179,6 +217,7 @@ jobs:
           import { readFile } from 'node:fs/promises';
           const report = JSON.parse(await readFile('.typespec-json-schema-validator/json-drift/report.json', 'utf8'));
           if (report.status !== 'stopped_for_evaluation') throw new Error(`unexpected JSON Schema drift status: ${report.status}`);
+          if (!Array.isArray(report.findings) || report.findings.length === 0) throw new Error('JSON-Schema-only drift produced no findings');
           NODE
 
       - name: Prove authored split peers were not rewritten
