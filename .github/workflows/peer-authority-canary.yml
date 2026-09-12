@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'contracts/peer-authority-canary/**'
+      - 'canaries/ores-nested-split/**'
       - '.github/workflows/peer-authority-canary.yml'
   push:
     branches: [main]
     paths:
       - 'contracts/peer-authority-canary/**'
+      - 'canaries/ores-nested-split/**'
       - '.github/workflows/peer-authority-canary.yml'
   workflow_dispatch:
 
