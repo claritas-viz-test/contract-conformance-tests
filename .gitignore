@@ -6,6 +6,11 @@ __pycache__/
 .coverage
 htmlcov/
 .venv/
+.typespec-json-schema-validator/
+
+# Fleet scratch/worktree hygiene.
+tmp/
+temp/
 
 # >>> ores fleet hygiene — managed block, edits below are overwritten >>>
 tmp/temp/

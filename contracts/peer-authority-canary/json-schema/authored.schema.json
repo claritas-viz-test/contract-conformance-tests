@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:claritas-test:peer-authority-canary:v1",
+  "$defs": {
+    "CanaryPacket": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 64},
+        "payload": {"type": "string", "minLength": 1, "maxLength": 256},
+        "revision": {"type": "integer", "minimum": 0, "maximum": 100},
+        "active": {"type": "boolean"}
+      },
+      "required": ["id", "payload", "revision", "active"],
+      "unevaluatedProperties": false
+    }
+  }
+}
