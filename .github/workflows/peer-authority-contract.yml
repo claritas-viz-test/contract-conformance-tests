@@ -3,12 +3,12 @@ name: Peer authority contract
 on:
   pull_request:
     paths:
-      - "contracts/visualization-query/**"
+      - "contracts/**"
       - ".github/workflows/peer-authority-contract.yml"
   push:
     branches: [main]
     paths:
-      - "contracts/visualization-query/**"
+      - "contracts/**"
       - ".github/workflows/peer-authority-contract.yml"
   workflow_dispatch:
 
@@ -18,7 +18,13 @@ permissions:
 jobs:
   tjsv-parity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        contract:
+          - visualization-query
+          - visualization-catalog
     steps:
       - name: Check out exact Claritas test head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -49,23 +55,81 @@ jobs:
       - name: Install pinned TJSV dependency closure
         run: npm ci --prefix .tjsv
 
-      - name: Transpile TypeSpec and compare generated vs authored JSON Schema
+      - name: Transpile TypeSpec A to Schema B and compare with authored Schema A
+        env:
+          CONTRACT: ${{ matrix.contract }}
         run: |
           set -euo pipefail
-          rm -rf .typespec-json-schema-validator/claritas
-          mkdir -p .typespec-json-schema-validator/claritas/generated
+          root="contracts/$CONTRACT"
+          out=".typespec-json-schema-validator/$CONTRACT"
+          rm -rf "$out"
+          mkdir -p "$out/generated"
+          authored_before="$(sha256sum "$root/authored.schema.json" | cut -d' ' -f1)"
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec contracts/visualization-query/main.tsp \
-            --schema contracts/visualization-query/authored.schema.json \
-            --instances contracts/visualization-query/instances \
-            --output-dir .typespec-json-schema-validator/claritas/generated \
+            --typespec "$root/main.tsp" \
+            --schema "$root/authored.schema.json" \
+            --instances "$root/instances" \
+            --output-dir "$out/generated" \
             --bundle-id typespec.generated.schema.json \
-            --report .typespec-json-schema-validator/claritas/report.json \
-            --sarif .typespec-json-schema-validator/claritas/report.sarif \
-            --contract-ir .typespec-json-schema-validator/claritas/contract-ir.json \
+            --report "$out/report.json" \
+            --sarif "$out/report.sarif" \
+            --contract-ir "$out/contract-ir.json" \
             --quiet
-          test -s .typespec-json-schema-validator/claritas/generated/typespec.generated.schema.json
-          test -s .typespec-json-schema-validator/claritas/report.json
-          test -s .typespec-json-schema-validator/claritas/contract-ir.json
+          test -s "$out/generated/typespec.generated.schema.json"
+          test -s "$out/report.json"
+          test -s "$out/contract-ir.json"
+          authored_after="$(sha256sum "$root/authored.schema.json" | cut -d' ' -f1)"
+          test "$authored_before" = "$authored_after"
+          test "$root/authored.schema.json" != "$out/generated/typespec.generated.schema.json"
           grep -F '"$schema": "https://json-schema.org/draft/2020-12/schema"' \
-            contracts/visualization-query/authored.schema.json
+            "$root/authored.schema.json"
+
+      - name: Prove one-sided authored JSON Schema drift fails closed
+        if: matrix.contract == 'visualization-catalog'
+        run: |
+          set -euo pipefail
+          root="contracts/visualization-catalog"
+          scratch="$RUNNER_TEMP/schema-drift"
+          cp -R "$root" "$scratch"
+          node - "$scratch/authored.schema.json" <<'JS'
+          const fs = require('node:fs');
+          const path = process.argv[2];
+          const value = JSON.parse(fs.readFileSync(path, 'utf8'));
+          value.$defs.VisualizationFamily.enum[0] = 'chart-drift';
+          fs.writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+          JS
+          set +e
+          node .tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec "$scratch/main.tsp" \
+            --schema "$scratch/authored.schema.json" \
+            --instances "$scratch/instances" \
+            --output-dir "$RUNNER_TEMP/schema-drift-out" \
+            --bundle-id typespec.generated.schema.json \
+            --report "$RUNNER_TEMP/schema-drift-report.json" \
+            --contract-ir "$RUNNER_TEMP/schema-drift-ir.json" \
+            --quiet
+          status=$?
+          set -e
+          test "$status" -eq 2
+
+      - name: Prove one-sided TypeSpec drift fails closed
+        if: matrix.contract == 'visualization-catalog'
+        run: |
+          set -euo pipefail
+          root="contracts/visualization-catalog"
+          scratch="$RUNNER_TEMP/typespec-drift"
+          cp -R "$root" "$scratch"
+          sed -i 's/chart: "chart"/chart: "chart-drift"/' "$scratch/main.tsp"
+          set +e
+          node .tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec "$scratch/main.tsp" \
+            --schema "$scratch/authored.schema.json" \
+            --instances "$scratch/instances" \
+            --output-dir "$RUNNER_TEMP/typespec-drift-out" \
+            --bundle-id typespec.generated.schema.json \
+            --report "$RUNNER_TEMP/typespec-drift-report.json" \
+            --contract-ir "$RUNNER_TEMP/typespec-drift-ir.json" \
+            --quiet
+          status=$?
+          set -e
+          test "$status" -eq 2
