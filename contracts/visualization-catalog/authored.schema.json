@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/claritas-viz-test/contract-conformance-tests/contracts/visualization-catalog/authored.schema.json",
+  "$comment": "Independent authored JSON Schema authority A. TypeSpec emits separate Schema B for comparison; this file is never generated or overwritten.",
+  "$defs": {
+    "VisualizationFamily": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "VisualizationFamily",
+      "type": "string",
+      "enum": ["chart", "plot", "graph", "diagram", "map", "matrix", "timeline", "scientific", "formal", "hybrid"]
+    },
+    "RendererTarget": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RendererTarget",
+      "type": "string",
+      "enum": ["mash", "leptos", "dioxus", "rust-wasm", "flutter", "html-svg", "htmx", "web-components", "webview-bridge", "qt-qml"]
+    },
+    "VisualizationDescriptorV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "VisualizationDescriptorV1",
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 96},
+        "title": {"type": "string", "minLength": 1, "maxLength": 128},
+        "family": {"$ref": "#/$defs/VisualizationFamily"},
+        "renderers": {"type": "array", "items": {"$ref": "#/$defs/RendererTarget"}, "minItems": 1, "maxItems": 10}
+      },
+      "required": ["id", "title", "family", "renderers"],
+      "unevaluatedProperties": false
+    },
+    "VisualizationCatalogV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "VisualizationCatalogV1",
+      "type": "object",
+      "properties": {
+        "version": {"type": "integer", "minimum": 1, "maximum": 1},
+        "visualizations": {"type": "array", "items": {"$ref": "#/$defs/VisualizationDescriptorV1"}, "minItems": 1, "maxItems": 512}
+      },
+      "required": ["version", "visualizations"],
+      "unevaluatedProperties": false
+    }
+  }
+}
