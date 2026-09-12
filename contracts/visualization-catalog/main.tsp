@@ -30,7 +30,6 @@ enum RendererTarget {
   qtQml: "qt-qml",
 }
 
-@extension("additionalProperties", false)
 model VisualizationDescriptorV1 {
   @minLength(1)
   @maxLength(96)
@@ -47,11 +46,10 @@ model VisualizationDescriptorV1 {
   renderers: RendererTarget[];
 }
 
-@extension("additionalProperties", false)
 model VisualizationCatalogV1 {
   @minValue(1)
   @maxValue(1)
-  version: int32;
+  version: integer;
 
   @minItems(1)
   @maxItems(512)
