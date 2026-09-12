@@ -33,10 +33,10 @@ jobs:
           import { readFileSync } from 'node:fs';
           const lock = JSON.parse(readFileSync('canaries/ores-nested-split/product-lock.json', 'utf8'));
           const expected = {
-            productHead: 'b538312ee2676dc4d49dc28c2906561b74448956',
-            productBase: '14b7cbc75e74be3d4454377bbdcfd979020708f5',
+            productHead: '8d80a6988021612d3f5e12ee017b1bac2d793abb',
+            productBase: '7b2fed43836d723474a6cf86de7167d576b6a1e1',
             scannerBlob: 'b62260c4324568757315cc7adef98110b746a7d4',
-            dispatcherBlob: '27bbb2e32257673cc13b1817c5a169ccab774d53',
+            dispatcherBlob: '09938dcbb458f314f27e7adf1847f53528668ec3',
             rustToolchain: '1.95.0',
           };
           for (const [key, value] of Object.entries(expected)) {
@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git hash-object canaries/ores-nested-split/src/audit/nested_split_peer_contracts.rs)" = 'b62260c4324568757315cc7adef98110b746a7d4'
-          test "$(git hash-object canaries/ores-nested-split/product-audit-mod.rs)" = '27bbb2e32257673cc13b1817c5a169ccab774d53'
+          test "$(git hash-object canaries/ores-nested-split/product-audit-mod.rs)" = '09938dcbb458f314f27e7adf1847f53528668ec3'
 
       - name: Install exact ORES Rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
