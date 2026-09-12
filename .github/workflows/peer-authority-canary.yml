@@ -1,0 +1,68 @@
+name: Peer authority TypeSpec JSON Schema canary
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/peer-authority-canary/**'
+      - '.github/workflows/peer-authority-canary.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'contracts/peer-authority-canary/**'
+      - '.github/workflows/peer-authority-canary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: peer-authority-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Verify exact candidate head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22.16.0
+      - name: Compile TypeSpec to Schema B and compare independent peers
+        uses: ORESoftware/typespec-json-schema-validator@b5bd51946b53c00b1daeb2723c0b5d54eaeafab7
+        with:
+          typespec: contracts/peer-authority-canary/typespec/main.tsp
+          schema: contracts/peer-authority-canary/json-schema/authored.schema.json
+          instances: contracts/peer-authority-canary/instances
+          report: .typespec-json-schema-validator/canary/report.json
+          contract_ir: .typespec-json-schema-validator/canary/contract-ir.json
+          output_dir: .typespec-json-schema-validator/canary/generated
+          max_probes: "64"
+          seal_object_schemas: "true"
+      - name: Verify Contract IR against the exact current inputs
+        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@b5bd51946b53c00b1daeb2723c0b5d54eaeafab7
+        with:
+          contract_ir: .typespec-json-schema-validator/canary/contract-ir.json
+          report: .typespec-json-schema-validator/canary/report.json
+          typespec: contracts/peer-authority-canary/typespec/main.tsp
+          schema: contracts/peer-authority-canary/json-schema/authored.schema.json
+          generated_schema: .typespec-json-schema-validator/canary/generated/typespec.generated.schema.json
+          expected_declarations: '["ClaritasTest.Peer.V1.CanaryPacket"]'
+          verification: .typespec-json-schema-validator/canary/verification.json
+      - name: Prove authored peers were not rewritten
+        run: git diff --exit-code -- contracts/peer-authority-canary/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ always() }}
+        with:
+          name: peer-authority-canary-${{ github.event.pull_request.head.sha || github.sha }}
+          path: .typespec-json-schema-validator/canary/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
