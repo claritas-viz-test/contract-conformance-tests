@@ -22,9 +22,10 @@ concurrency:
 jobs:
   parity:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
@@ -32,11 +33,13 @@ jobs:
         env:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+      - name: Set up tested Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22.16.0
-      - name: Compile TypeSpec to Schema B and compare independent peers
-        uses: ORESoftware/typespec-json-schema-validator@b5bd51946b53c00b1daeb2723c0b5d54eaeafab7
+
+      - name: Compile TypeSpec to Schema B and compare independent split peers
+        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
         with:
           typespec: contracts/peer-authority-canary/typespec/main.tsp
           schema: contracts/peer-authority-canary/json-schema/authored.schema.json
@@ -46,8 +49,9 @@ jobs:
           output_dir: .typespec-json-schema-validator/canary/generated
           max_probes: "64"
           seal_object_schemas: "true"
-      - name: Verify Contract IR against the exact current inputs
-        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@b5bd51946b53c00b1daeb2723c0b5d54eaeafab7
+
+      - name: Verify Contract IR against all three exact current inputs
+        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
         with:
           contract_ir: .typespec-json-schema-validator/canary/contract-ir.json
           report: .typespec-json-schema-validator/canary/report.json
@@ -56,13 +60,137 @@ jobs:
           generated_schema: .typespec-json-schema-validator/canary/generated/typespec.generated.schema.json
           expected_declarations: '["ClaritasTest.Peer.V1.CanaryPacket"]'
           verification: .typespec-json-schema-validator/canary/verification.json
-      - name: Prove authored peers were not rewritten
+
+      - name: Require first-class authored peers and comparison-only Schema B
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile, realpath } from 'node:fs/promises';
+          const irPath = '.typespec-json-schema-validator/canary/contract-ir.json';
+          const reportPath = '.typespec-json-schema-validator/canary/report.json';
+          const authoredPath = 'contracts/peer-authority-canary/json-schema/authored.schema.json';
+          const generatedPath = '.typespec-json-schema-validator/canary/generated/typespec.generated.schema.json';
+          const [ir, report, authoredReal, generatedReal] = await Promise.all([
+            readFile(irPath, 'utf8').then(JSON.parse),
+            readFile(reportPath, 'utf8').then(JSON.parse),
+            realpath(authoredPath),
+            realpath(generatedPath),
+          ]);
+          const roles = {
+            typespec: 'independently-authored',
+            jsonSchema: 'independently-authored',
+            generatedJsonSchema: 'comparison-evidence-only',
+            precedence: 'none',
+          };
+          for (const [key, expected] of Object.entries(roles)) {
+            if (ir.authorities?.[key] !== expected) {
+              throw new Error(`unexpected Contract IR authority ${key}: ${JSON.stringify(ir.authorities?.[key])}`);
+            }
+          }
+          if (ir.admission?.requirements?.generatedSchemaComparison !== true) {
+            throw new Error('generated Schema B comparison is not a required admission invariant');
+          }
+          if (report.coverage?.typespecGeneratedJsonSchemaComparison !== true) {
+            throw new Error('report does not prove TypeSpec-generated Schema B comparison');
+          }
+          if (report.coverage?.differentialInstanceValidation !== true) {
+            throw new Error('report does not prove differential instance validation');
+          }
+          if (authoredReal === generatedReal) {
+            throw new Error('authored Schema A and generated Schema B resolve to the same file');
+          }
+          NODE
+
+      - name: Prepare TypeSpec-only split-lane drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/claritas-split-typespec-drift"
+          sed 's/@maxValue(100) revision:/@maxValue(99) revision:/' \
+            contracts/peer-authority-canary/typespec/main.tsp \
+            > "$RUNNER_TEMP/claritas-split-typespec-drift/main.tsp"
+
+      - name: Reject TypeSpec-only split-lane drift
+        id: typespec_drift
+        continue-on-error: true
+        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        with:
+          typespec: ${{ runner.temp }}/claritas-split-typespec-drift/main.tsp
+          schema: contracts/peer-authority-canary/json-schema/authored.schema.json
+          instances: contracts/peer-authority-canary/instances
+          report: .typespec-json-schema-validator/typespec-drift/report.json
+          contract_ir: .typespec-json-schema-validator/typespec-drift/contract-ir.json
+          output_dir: .typespec-json-schema-validator/typespec-drift/generated
+          max_probes: "64"
+          seal_object_schemas: "true"
+
+      - name: Require TypeSpec-only drift to fail closed
+        if: always()
+        env:
+          OUTCOME: ${{ steps.typespec_drift.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$OUTCOME" = failure
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const report = JSON.parse(await readFile('.typespec-json-schema-validator/typespec-drift/report.json', 'utf8'));
+          if (report.status !== 'stopped_for_evaluation') throw new Error(`unexpected TypeSpec drift status: ${report.status}`);
+          NODE
+
+      - name: Prepare JSON-Schema-only split-lane drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/claritas-split-json-drift"
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises';
+          const source = 'contracts/peer-authority-canary/json-schema/authored.schema.json';
+          const target = `${process.env.RUNNER_TEMP}/claritas-split-json-drift/authored.schema.json`;
+          const schema = JSON.parse(await readFile(source, 'utf8'));
+          schema.$defs.CanaryPacket.properties.revision.maximum = 99;
+          await writeFile(target, `${JSON.stringify(schema, null, 2)}\n`);
+          NODE
+
+      - name: Reject JSON-Schema-only split-lane drift
+        id: json_drift
+        continue-on-error: true
+        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        with:
+          typespec: contracts/peer-authority-canary/typespec/main.tsp
+          schema: ${{ runner.temp }}/claritas-split-json-drift/authored.schema.json
+          instances: contracts/peer-authority-canary/instances
+          report: .typespec-json-schema-validator/json-drift/report.json
+          contract_ir: .typespec-json-schema-validator/json-drift/contract-ir.json
+          output_dir: .typespec-json-schema-validator/json-drift/generated
+          max_probes: "64"
+          seal_object_schemas: "true"
+
+      - name: Require JSON-Schema-only drift to fail closed
+        if: always()
+        env:
+          OUTCOME: ${{ steps.json_drift.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$OUTCOME" = failure
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const report = JSON.parse(await readFile('.typespec-json-schema-validator/json-drift/report.json', 'utf8'));
+          if (report.status !== 'stopped_for_evaluation') throw new Error(`unexpected JSON Schema drift status: ${report.status}`);
+          NODE
+
+      - name: Prove authored split peers were not rewritten
         run: git diff --exit-code -- contracts/peer-authority-canary/
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+
+      - name: Retain diagnostic evidence
         if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: peer-authority-canary-${{ github.event.pull_request.head.sha || github.sha }}
           path: .typespec-json-schema-validator/canary/
           include-hidden-files: true
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14

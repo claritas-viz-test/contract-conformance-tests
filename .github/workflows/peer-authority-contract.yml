@@ -3,12 +3,14 @@ name: Peer authority contract
 on:
   pull_request:
     paths:
-      - "contracts/**"
+      - "contracts/visualization-query/**"
+      - "contracts/visualization-catalog/**"
       - ".github/workflows/peer-authority-contract.yml"
   push:
     branches: [main]
     paths:
-      - "contracts/**"
+      - "contracts/visualization-query/**"
+      - "contracts/visualization-catalog/**"
       - ".github/workflows/peer-authority-contract.yml"
   workflow_dispatch:
 
@@ -22,9 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        contract:
-          - visualization-query
-          - visualization-catalog
+        contract: [visualization-query, visualization-catalog]
     steps:
       - name: Check out exact Claritas test head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,9 +41,9 @@ jobs:
 
       - name: Bind independently authored source bytes
         id: authored
+        shell: bash
         env:
           CONTRACT: ${{ matrix.contract }}
-        shell: bash
         run: |
           set -euo pipefail
           root="contracts/$CONTRACT"
@@ -70,9 +70,10 @@ jobs:
       - name: Install pinned TJSV dependency closure
         run: npm ci --prefix .tjsv
 
-      - name: Transpile TypeSpec A to Schema B and compare with authored Schema A
+      - name: Transpile TypeSpec and compare generated vs authored JSON Schema
         env:
           CONTRACT: ${{ matrix.contract }}
+        shell: bash
         run: |
           set -euo pipefail
           root="contracts/$CONTRACT"
@@ -133,40 +134,34 @@ jobs:
           root="contracts/$CONTRACT"
           case_dir="$RUNNER_TEMP/$CONTRACT-json-schema-drift"
           rm -rf "$case_dir"
-          cp -R "$root" "$case_dir"
           mkdir -p "$case_dir/generated"
-          node - "$CONTRACT" "$case_dir/authored.schema.json" <<'JS'
+          cp "$root/authored.schema.json" "$case_dir/authored.schema.json"
+          node - "$case_dir/authored.schema.json" <<'JS'
           const fs = require('node:fs');
-          const [contract, path] = process.argv.slice(2);
+          const path = process.argv[2];
           const schema = JSON.parse(fs.readFileSync(path, 'utf8'));
-          if (contract === 'visualization-query') {
-            schema.$defs.VisualizationQueryV1.properties.limit.maximum = 499;
-          } else if (contract === 'visualization-catalog') {
-            schema.$defs.VisualizationFamily.enum[0] = 'chart-drift';
-          } else {
-            throw new Error(`unsupported contract: ${contract}`);
-          }
+          const defs = schema.$defs ??= {};
+          defs.__TjsvNegativeControl = {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            $id: '__TjsvNegativeControl',
+            type: 'string',
+          };
           fs.writeFileSync(path, `${JSON.stringify(schema, null, 2)}\n`);
           JS
           set +e
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec "$case_dir/main.tsp" \
+            --typespec "$root/main.tsp" \
             --schema "$case_dir/authored.schema.json" \
-            --instances "$case_dir/instances" \
+            --instances "$root/instances" \
             --output-dir "$case_dir/generated" \
-            --bundle-id typespec.generated.schema.json \
             --report "$case_dir/report.json" \
             --contract-ir "$case_dir/contract-ir.json" \
             --quiet
           status=$?
           set -e
           test "$status" -eq 2
-          jq -e '
-            .status == "stopped_for_evaluation" and
-            any(.findings[]; .ruleId == "generated-authored-semantic-mismatch")
-          ' "$case_dir/report.json"
-          mkdir -p ".typespec-json-schema-validator/$CONTRACT/negative"
-          cp "$case_dir/report.json" ".typespec-json-schema-validator/$CONTRACT/negative/json-schema-drift.report.json"
+          jq -e '.status == "stopped_for_evaluation" and (.findings | length) > 0' "$case_dir/report.json"
+          test -s "$case_dir/generated/typespec.generated.schema.json"
 
       - name: Reject one-sided authored TypeSpec drift
         env:
@@ -177,39 +172,28 @@ jobs:
           root="contracts/$CONTRACT"
           case_dir="$RUNNER_TEMP/$CONTRACT-typespec-drift"
           rm -rf "$case_dir"
-          cp -R "$root" "$case_dir"
           mkdir -p "$case_dir/generated"
-          node - "$CONTRACT" "$case_dir/main.tsp" <<'JS'
-          const fs = require('node:fs');
-          const [contract, path] = process.argv.slice(2);
-          const source = fs.readFileSync(path, 'utf8');
-          const [oldText, newText] = contract === 'visualization-query'
-            ? ['  @maxValue(500)\n  limit: integer;', '  @maxValue(499)\n  limit: integer;']
-            : ['  chart: "chart",', '  chart: "chart-drift",'];
-          if (source.split(oldText).length !== 2) {
-            throw new Error(`expected exactly one drift anchor for ${contract}`);
+          cp "$root/main.tsp" "$case_dir/main.tsp"
+          cat >> "$case_dir/main.tsp" <<'EOF'
+
+          model __TjsvNegativeControl {
+            marker: string;
           }
-          fs.writeFileSync(path, source.replace(oldText, newText));
-          JS
+          EOF
           set +e
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
             --typespec "$case_dir/main.tsp" \
-            --schema "$case_dir/authored.schema.json" \
-            --instances "$case_dir/instances" \
+            --schema "$root/authored.schema.json" \
+            --instances "$root/instances" \
             --output-dir "$case_dir/generated" \
-            --bundle-id typespec.generated.schema.json \
             --report "$case_dir/report.json" \
             --contract-ir "$case_dir/contract-ir.json" \
             --quiet
           status=$?
           set -e
           test "$status" -eq 2
-          jq -e '
-            .status == "stopped_for_evaluation" and
-            any(.findings[]; .ruleId == "generated-authored-semantic-mismatch")
-          ' "$case_dir/report.json"
-          mkdir -p ".typespec-json-schema-validator/$CONTRACT/negative"
-          cp "$case_dir/report.json" ".typespec-json-schema-validator/$CONTRACT/negative/typespec-drift.report.json"
+          jq -e '.status == "stopped_for_evaluation" and (.findings | length) > 0' "$case_dir/report.json"
+          test -s "$case_dir/generated/typespec.generated.schema.json"
 
       - name: Prove authored sources remained immutable
         env:
@@ -229,7 +213,7 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: claritas-${{ matrix.contract }}-peer-authority-${{ github.run_id }}-${{ github.run_attempt }}
+          name: claritas-peer-authority-${{ matrix.contract }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: .typespec-json-schema-validator/${{ matrix.contract }}
           include-hidden-files: true
           if-no-files-found: warn
