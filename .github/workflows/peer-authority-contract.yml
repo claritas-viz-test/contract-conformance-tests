@@ -67,4 +67,5 @@ jobs:
           test -s .typespec-json-schema-validator/claritas/generated/typespec.generated.schema.json
           test -s .typespec-json-schema-validator/claritas/report.json
           test -s .typespec-json-schema-validator/claritas/contract-ir.json
-          test "$(jq -r '."'"'$schema'"'"'' contracts/visualization-query/authored.schema.json)" = "https://json-schema.org/draft/2020-12/schema"
+          grep -F '"$schema": "https://json-schema.org/draft/2020-12/schema"' \
+            contracts/visualization-query/authored.schema.json
