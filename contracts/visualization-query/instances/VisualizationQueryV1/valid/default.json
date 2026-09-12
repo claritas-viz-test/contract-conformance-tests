@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "dataset_id": "sales-2026",
+  "view_id": "regional-overview",
+  "limit": 100,
+  "include_archived": false
+}
