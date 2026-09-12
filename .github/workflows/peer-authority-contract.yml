@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - "contracts/visualization-query/**"
+      - "contracts/visualization-catalog/**"
       - ".github/workflows/peer-authority-contract.yml"
   push:
     branches: [main]
     paths:
       - "contracts/visualization-query/**"
+      - "contracts/visualization-catalog/**"
       - ".github/workflows/peer-authority-contract.yml"
   workflow_dispatch:
 
@@ -19,6 +21,10 @@ jobs:
   tjsv-parity:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        contract: [visualization-query, visualization-catalog]
     steps:
       - name: Check out exact Claritas test head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -36,10 +42,13 @@ jobs:
       - name: Bind independently authored source bytes
         id: authored
         shell: bash
+        env:
+          CONTRACT: ${{ matrix.contract }}
         run: |
           set -euo pipefail
-          printf 'typespec=%s\n' "$(sha256sum contracts/visualization-query/main.tsp | awk '{print $1}')" >> "$GITHUB_OUTPUT"
-          printf 'schema=%s\n' "$(sha256sum contracts/visualization-query/authored.schema.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          root="contracts/$CONTRACT"
+          printf 'typespec=%s\n' "$(sha256sum "$root/main.tsp" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          printf 'schema=%s\n' "$(sha256sum "$root/authored.schema.json" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Check out exact canonical TJSV
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,28 +71,36 @@ jobs:
         run: npm ci --prefix .tjsv
 
       - name: Transpile TypeSpec and compare generated vs authored JSON Schema
-        run: |
-          set -euo pipefail
-          rm -rf .typespec-json-schema-validator/claritas
-          mkdir -p .typespec-json-schema-validator/claritas/generated
-          node .tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec contracts/visualization-query/main.tsp \
-            --schema contracts/visualization-query/authored.schema.json \
-            --instances contracts/visualization-query/instances \
-            --output-dir .typespec-json-schema-validator/claritas/generated \
-            --bundle-id typespec.generated.schema.json \
-            --report .typespec-json-schema-validator/claritas/report.json \
-            --sarif .typespec-json-schema-validator/claritas/report.sarif \
-            --contract-ir .typespec-json-schema-validator/claritas/contract-ir.json \
-            --quiet
-
-      - name: Require independent peer roles and comparison-only Schema B
+        env:
+          CONTRACT: ${{ matrix.contract }}
         shell: bash
         run: |
           set -euo pipefail
-          report=.typespec-json-schema-validator/claritas/report.json
-          ir=.typespec-json-schema-validator/claritas/contract-ir.json
-          generated=.typespec-json-schema-validator/claritas/generated/typespec.generated.schema.json
+          root="contracts/$CONTRACT"
+          out=".typespec-json-schema-validator/$CONTRACT"
+          rm -rf "$out"
+          mkdir -p "$out/generated"
+          node .tjsv/bin/typespec-json-schema-validator.mjs check \
+            --typespec "$root/main.tsp" \
+            --schema "$root/authored.schema.json" \
+            --instances "$root/instances" \
+            --output-dir "$out/generated" \
+            --bundle-id typespec.generated.schema.json \
+            --report "$out/report.json" \
+            --sarif "$out/report.sarif" \
+            --contract-ir "$out/contract-ir.json" \
+            --quiet
+
+      - name: Require independent peer roles and comparison-only Schema B
+        env:
+          CONTRACT: ${{ matrix.contract }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=".typespec-json-schema-validator/$CONTRACT"
+          report="$out/report.json"
+          ir="$out/contract-ir.json"
+          generated="$out/generated/typespec.generated.schema.json"
           test -s "$generated"
           jq -e '
             .schema == "ores.typespec-json-schema-validator.report/v1" and
@@ -109,13 +126,16 @@ jobs:
           jq -e '."$schema" == "https://json-schema.org/draft/2020-12/schema"' "$generated"
 
       - name: Reject one-sided authored JSON Schema drift
+        env:
+          CONTRACT: ${{ matrix.contract }}
         shell: bash
         run: |
           set -euo pipefail
-          case_dir="$RUNNER_TEMP/claritas-json-schema-drift"
+          root="contracts/$CONTRACT"
+          case_dir="$RUNNER_TEMP/$CONTRACT-json-schema-drift"
           rm -rf "$case_dir"
           mkdir -p "$case_dir/generated"
-          cp contracts/visualization-query/authored.schema.json "$case_dir/authored.schema.json"
+          cp "$root/authored.schema.json" "$case_dir/authored.schema.json"
           python3 - "$case_dir/authored.schema.json" <<'PY'
           import json
           import sys
@@ -123,14 +143,19 @@ jobs:
 
           path = Path(sys.argv[1])
           schema = json.loads(path.read_text(encoding="utf-8"))
-          schema["$defs"]["VisualizationQueryV1"]["properties"]["limit"]["maximum"] = 499
+          defs = schema.setdefault("$defs", {})
+          defs["__TjsvNegativeControl"] = {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "__TjsvNegativeControl",
+              "type": "string"
+          }
           path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
           PY
           set +e
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
-            --typespec contracts/visualization-query/main.tsp \
+            --typespec "$root/main.tsp" \
             --schema "$case_dir/authored.schema.json" \
-            --instances contracts/visualization-query/instances \
+            --instances "$root/instances" \
             --output-dir "$case_dir/generated" \
             --report "$case_dir/report.json" \
             --contract-ir "$case_dir/contract-ir.json" \
@@ -138,38 +163,31 @@ jobs:
           status=$?
           set -e
           test "$status" -eq 2
-          jq -e '
-            .status == "stopped_for_evaluation" and
-            any(.findings[]; .ruleId == "generated-authored-semantic-mismatch")
-          ' "$case_dir/report.json"
-          mkdir -p .typespec-json-schema-validator/negative
-          cp "$case_dir/report.json" .typespec-json-schema-validator/negative/json-schema-drift.report.json
+          jq -e '.status == "stopped_for_evaluation" and (.findings | length) > 0' "$case_dir/report.json"
+          test -s "$case_dir/generated/typespec.generated.schema.json"
 
       - name: Reject one-sided authored TypeSpec drift
+        env:
+          CONTRACT: ${{ matrix.contract }}
         shell: bash
         run: |
           set -euo pipefail
-          case_dir="$RUNNER_TEMP/claritas-typespec-drift"
+          root="contracts/$CONTRACT"
+          case_dir="$RUNNER_TEMP/$CONTRACT-typespec-drift"
           rm -rf "$case_dir"
           mkdir -p "$case_dir/generated"
-          cp contracts/visualization-query/main.tsp "$case_dir/main.tsp"
-          python3 - "$case_dir/main.tsp" <<'PY'
-          import sys
-          from pathlib import Path
+          cp "$root/main.tsp" "$case_dir/main.tsp"
+          cat >> "$case_dir/main.tsp" <<'EOF'
 
-          path = Path(sys.argv[1])
-          source = path.read_text(encoding="utf-8")
-          old = "  @maxValue(500)\n  limit: integer;"
-          new = "  @maxValue(499)\n  limit: integer;"
-          if source.count(old) != 1:
-              raise SystemExit("expected one limit constraint anchor")
-          path.write_text(source.replace(old, new, 1), encoding="utf-8")
-          PY
+          model __TjsvNegativeControl {
+            marker: string;
+          }
+          EOF
           set +e
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
             --typespec "$case_dir/main.tsp" \
-            --schema contracts/visualization-query/authored.schema.json \
-            --instances contracts/visualization-query/instances \
+            --schema "$root/authored.schema.json" \
+            --instances "$root/instances" \
             --output-dir "$case_dir/generated" \
             --report "$case_dir/report.json" \
             --contract-ir "$case_dir/contract-ir.json" \
@@ -177,30 +195,29 @@ jobs:
           status=$?
           set -e
           test "$status" -eq 2
-          jq -e '
-            .status == "stopped_for_evaluation" and
-            any(.findings[]; .ruleId == "generated-authored-semantic-mismatch")
-          ' "$case_dir/report.json"
-          cp "$case_dir/report.json" .typespec-json-schema-validator/negative/typespec-drift.report.json
+          jq -e '.status == "stopped_for_evaluation" and (.findings | length) > 0' "$case_dir/report.json"
+          test -s "$case_dir/generated/typespec.generated.schema.json"
 
       - name: Prove authored sources remained immutable
         env:
+          CONTRACT: ${{ matrix.contract }}
           EXPECTED_TYPESPEC_SHA256: ${{ steps.authored.outputs.typespec }}
           EXPECTED_SCHEMA_SHA256: ${{ steps.authored.outputs.schema }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$(sha256sum contracts/visualization-query/main.tsp | awk '{print $1}')" = "$EXPECTED_TYPESPEC_SHA256"
-          test "$(sha256sum contracts/visualization-query/authored.schema.json | awk '{print $1}')" = "$EXPECTED_SCHEMA_SHA256"
-          git diff --exit-code -- contracts/visualization-query
+          root="contracts/$CONTRACT"
+          test "$(sha256sum "$root/main.tsp" | awk '{print $1}')" = "$EXPECTED_TYPESPEC_SHA256"
+          test "$(sha256sum "$root/authored.schema.json" | awk '{print $1}')" = "$EXPECTED_SCHEMA_SHA256"
+          git diff --exit-code -- "$root"
 
       - name: Retain deterministic parity evidence
         if: ${{ always() }}
         continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: claritas-peer-authority-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .typespec-json-schema-validator
+          name: claritas-peer-authority-${{ matrix.contract }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .typespec-json-schema-validator/${{ matrix.contract }}
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30

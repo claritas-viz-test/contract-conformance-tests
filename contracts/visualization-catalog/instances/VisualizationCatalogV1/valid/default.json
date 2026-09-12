@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "visualizations": [
+    {"id": "histogram", "title": "Histogram", "family": "plot", "renderers": ["mash", "leptos", "dioxus", "rust-wasm", "flutter", "html-svg", "htmx", "web-components", "webview-bridge", "qt-qml"]},
+    {"id": "state-machine", "title": "State Machine", "family": "formal", "renderers": ["mash", "dioxus", "rust-wasm", "flutter", "html-svg"]}
+  ]
+}
