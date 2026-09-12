@@ -22,8 +22,8 @@
       "properties": {
         "id": {"type": "string", "minLength": 1, "maxLength": 96},
         "title": {"type": "string", "minLength": 1, "maxLength": 128},
-        "family": {"$ref": "#/$defs/VisualizationFamily"},
-        "renderers": {"type": "array", "items": {"$ref": "#/$defs/RendererTarget"}, "minItems": 1, "maxItems": 10}
+        "family": {"$ref": "https://github.com/claritas-viz-test/contract-conformance-tests/contracts/visualization-catalog/authored.schema.json#/$defs/VisualizationFamily"},
+        "renderers": {"type": "array", "items": {"$ref": "https://github.com/claritas-viz-test/contract-conformance-tests/contracts/visualization-catalog/authored.schema.json#/$defs/RendererTarget"}, "minItems": 1, "maxItems": 10}
       },
       "required": ["id", "title", "family", "renderers"],
       "unevaluatedProperties": false
@@ -34,7 +34,7 @@
       "type": "object",
       "properties": {
         "version": {"type": "integer", "minimum": 1, "maximum": 1},
-        "visualizations": {"type": "array", "items": {"$ref": "#/$defs/VisualizationDescriptorV1"}, "minItems": 1, "maxItems": 512}
+        "visualizations": {"type": "array", "items": {"$ref": "https://github.com/claritas-viz-test/contract-conformance-tests/contracts/visualization-catalog/authored.schema.json#/$defs/VisualizationDescriptorV1"}, "minItems": 1, "maxItems": 512}
       },
       "required": ["version", "visualizations"],
       "unevaluatedProperties": false
