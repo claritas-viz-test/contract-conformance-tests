@@ -84,9 +84,12 @@ fn generated_schema_b_never_satisfies_authored_schema_a() {
     .expect("generated comparison evidence");
 
     let report = audit_nested_split(&options(root.path().to_path_buf()));
-    assert!(report.findings.iter().any(|finding| {
-        finding.code == "nested-split-authored-json-schema-missing"
-    }));
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|finding| { finding.code == "nested-split-authored-json-schema-missing" })
+    );
     assert_eq!(
         report
             .metadata
@@ -102,8 +105,11 @@ fn ambiguity_and_wrong_draft_remain_fail_closed() {
     let contract = ambiguous.path().join("contracts/render");
     fs::create_dir_all(contract.join("typespec")).expect("TypeSpec lane");
     fs::create_dir_all(contract.join("json-schema")).expect("JSON Schema lane");
-    fs::write(contract.join("typespec/main.tsp"), "model RenderPacket {}\n")
-        .expect("TypeSpec authority");
+    fs::write(
+        contract.join("typespec/main.tsp"),
+        "model RenderPacket {}\n",
+    )
+    .expect("TypeSpec authority");
     for name in ["render.schema.json", "alternate.schema.json"] {
         fs::write(
             contract.join("json-schema").join(name),
@@ -112,16 +118,22 @@ fn ambiguity_and_wrong_draft_remain_fail_closed() {
         .expect("authored JSON Schema candidate");
     }
     let report = audit_nested_split(&options(ambiguous.path().to_path_buf()));
-    assert!(report.findings.iter().any(|finding| {
-        finding.code == "nested-split-authored-json-schema-ambiguous"
-    }));
+    assert!(
+        report
+            .findings
+            .iter()
+            .any(|finding| { finding.code == "nested-split-authored-json-schema-ambiguous" })
+    );
 
     let wrong_draft = tempdir().expect("temporary repository");
     let contract = wrong_draft.path().join("contracts/render");
     fs::create_dir_all(contract.join("typespec")).expect("TypeSpec lane");
     fs::create_dir_all(contract.join("json-schema")).expect("JSON Schema lane");
-    fs::write(contract.join("typespec/main.tsp"), "model RenderPacket {}\n")
-        .expect("TypeSpec authority");
+    fs::write(
+        contract.join("typespec/main.tsp"),
+        "model RenderPacket {}\n",
+    )
+    .expect("TypeSpec authority");
     fs::write(
         contract.join("json-schema/render.schema.json"),
         r#"{"$schema":"http://json-schema.org/draft-07/schema#","type":"object"}"#,
@@ -129,8 +141,11 @@ fn ambiguity_and_wrong_draft_remain_fail_closed() {
     .expect("wrong-draft schema");
     let mut legacy = CommandReport::new("audit repo");
     legacy.push(
-        Finding::error("nested-authored-json-schema-missing", "must remain fail closed")
-            .with_target("contracts/render/typespec"),
+        Finding::error(
+            "nested-authored-json-schema-missing",
+            "must remain fail closed",
+        )
+        .with_target("contracts/render/typespec"),
     );
     let report = audit_nested_split_with_report(&options(wrong_draft.path().to_path_buf()), legacy);
     assert!(
