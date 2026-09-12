@@ -136,21 +136,18 @@ jobs:
           rm -rf "$case_dir"
           mkdir -p "$case_dir/generated"
           cp "$root/authored.schema.json" "$case_dir/authored.schema.json"
-          python3 - "$case_dir/authored.schema.json" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          schema = json.loads(path.read_text(encoding="utf-8"))
-          defs = schema.setdefault("$defs", {})
-          defs["__TjsvNegativeControl"] = {
-              "$schema": "https://json-schema.org/draft/2020-12/schema",
-              "$id": "__TjsvNegativeControl",
-              "type": "string"
-          }
-          path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
-          PY
+          node - "$case_dir/authored.schema.json" <<'JS'
+          const fs = require('node:fs');
+          const path = process.argv[2];
+          const schema = JSON.parse(fs.readFileSync(path, 'utf8'));
+          const defs = schema.$defs ??= {};
+          defs.__TjsvNegativeControl = {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            $id: '__TjsvNegativeControl',
+            type: 'string',
+          };
+          fs.writeFileSync(path, `${JSON.stringify(schema, null, 2)}\n`);
+          JS
           set +e
           node .tjsv/bin/typespec-json-schema-validator.mjs check \
             --typespec "$root/main.tsp" \
