@@ -1,0 +1,18 @@
+{
+  "productRepository": "ORESoftware/ores-cli",
+  "productPullRequest": 263,
+  "productHead": "b538312ee2676dc4d49dc28c2906561b74448956",
+  "productBase": "14b7cbc75e74be3d4454377bbdcfd979020708f5",
+  "scannerPath": "src/audit/nested_split_peer_contracts.rs",
+  "scannerBlob": "b62260c4324568757315cc7adef98110b746a7d4",
+  "dispatcherPath": "src/audit/mod.rs",
+  "dispatcherBlob": "27bbb2e32257673cc13b1817c5a169ccab774d53",
+  "rustToolchain": "1.95.0",
+  "authorityModel": {
+    "typespec": "independently-authored-first-class",
+    "jsonSchema": "independently-authored-draft-2020-12-first-class",
+    "precedence": "none",
+    "generatedSchemaB": "comparison-evidence-only",
+    "semanticComparator": "ORESoftware/typespec-json-schema-validator"
+  }
+}
