@@ -1,0 +1,207 @@
+name: Certify ores-cli c539 cross-org exact source
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/certify-ores-cli-c539-cross-org.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact certificate candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify exact caller head
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+
+      - name: Check out exact public ores-cli certificate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: flags-2-env-test/contract-conformance-tests
+          ref: bbe66314a0b049cdbf763ce28d326bb90c4169b9
+          path: certificate
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Bind certificate and mirrored ores-cli #292 product blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C certificate rev-parse HEAD)" = 'bbe66314a0b049cdbf763ce28d326bb90c4169b9'
+          root=certificate/canaries/ores-cli-contract-tree
+          test "$(git -C certificate hash-object canaries/ores-cli-contract-tree/product/tjsv/source-lock.json)" = '812eeff36efca3bf70b3e046cadd8a5541b08c45'
+          test "$(git -C certificate hash-object canaries/ores-cli-contract-tree/product/.github/workflows/interfaces-contract-tree.yml)" = '09ebb2ab1a60dd189762c2fb0c4bd09a3e57fcae'
+          jq -e '.revision == "c5392b03a405bb5296d1de09ac785b3b097529cd"' "$root/product/tjsv/source-lock.json"
+          workflow="$root/product/.github/workflows/interfaces-contract-tree.yml"
+          for pin in \
+            c5392b03a405bb5296d1de09ac785b3b097529cd \
+            37e697afe6d73a3db4a70b12ba3ff6451e175233 \
+            8a0966bd60470aee89a3bd351ffc1ae51891e10c \
+            57cf041a545f43f0a534423eef52ca4d6d7e7361 \
+            365b186f3e951b23139f136b44c8ef75f67ced77; do
+            grep -Fq "$pin" "$workflow"
+          done
+          ! grep -Fq '07688e1eea92a666f7e8647038c9f2c1544440ed' "$workflow"
+
+      - name: Validate mirrored product workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: certificate/canaries/ores-cli-contract-tree/product/.github/workflows/interfaces-contract-tree.yml
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt, clippy
+
+      - name: Check out exact canonical TJSV
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/typespec-json-schema-validator
+          ref: c5392b03a405bb5296d1de09ac785b3b097529cd
+          path: .tjsv
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify exact TJSV revision
+        run: test "$(git -C .tjsv rev-parse HEAD)" = 'c5392b03a405bb5296d1de09ac785b3b097529cd'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.16.0
+          cache: npm
+          cache-dependency-path: .tjsv/package-lock.json
+
+      - name: Install pinned TJSV dependency closure
+        run: npm ci --prefix .tjsv
+
+      - name: Expose exact TJSV executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tjsv-bin"
+          cat > "$RUNNER_TEMP/tjsv-bin/tjsv" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          exec node "$GITHUB_WORKSPACE/.tjsv/bin/typespec-json-schema-validator.mjs" "$@"
+          EOF
+          chmod 0755 "$RUNNER_TEMP/tjsv-bin/tjsv"
+          echo "$RUNNER_TEMP/tjsv-bin" >> "$GITHUB_PATH"
+
+      - name: Check out certified 3FA fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: 3fa-app-test/contract-conformance-tests
+          ref: 37e697afe6d73a3db4a70b12ba3ff6451e175233
+          path: test-repos/3fa
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out certified Claritas fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: claritas-viz-test/contract-conformance-tests
+          ref: 8a0966bd60470aee89a3bd351ffc1ae51891e10c
+          path: test-repos/claritas
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out certified Messaging Intel fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: messaging-intel-test/contract-conformance-tests
+          ref: 57cf041a545f43f0a534423eef52ca4d6d7e7361
+          path: test-repos/messaging-intel
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Check out certified Opto Sync fixture
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: opto-sync-test/contract-conformance-tests
+          ref: 365b186f3e951b23139f136b44c8ef75f67ced77
+          path: test-repos/opto-sync
+          persist-credentials: false
+          show-progress: false
+          fetch-depth: 1
+
+      - name: Verify exact fixture revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C test-repos/3fa rev-parse HEAD)" = '37e697afe6d73a3db4a70b12ba3ff6451e175233'
+          test "$(git -C test-repos/claritas rev-parse HEAD)" = '8a0966bd60470aee89a3bd351ffc1ae51891e10c'
+          test "$(git -C test-repos/messaging-intel rev-parse HEAD)" = '57cf041a545f43f0a534423eef52ca4d6d7e7361'
+          test "$(git -C test-repos/opto-sync rev-parse HEAD)" = '365b186f3e951b23139f136b44c8ef75f67ced77'
+
+      - name: Generate harness lockfile from exact pins
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        run: cargo +1.95.0 generate-lockfile
+
+      - name: Enforce formatting and compile all targets
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        run: |
+          set -euo pipefail
+          cargo +1.95.0 fmt --all -- --check
+          cargo +1.95.0 check --locked --all-targets
+
+      - name: Run exact contract-tree discovery regressions
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        run: cargo +1.95.0 test --locked --lib -- --nocapture
+
+      - name: Deny warnings under Clippy
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        run: cargo +1.95.0 clippy --locked --all-targets -- -D warnings
+
+      - name: Execute exact tree audit against 3FA test org
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        env:
+          ORES_CLI_TEST_INTERFACE_REPO: ${{ github.workspace }}/test-repos/3fa
+        run: cargo +1.95.0 test --locked --test contract_tree_external -- --nocapture
+
+      - name: Execute exact tree audit against Claritas test org
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        env:
+          ORES_CLI_TEST_INTERFACE_REPO: ${{ github.workspace }}/test-repos/claritas
+        run: cargo +1.95.0 test --locked --test contract_tree_external -- --nocapture
+
+      - name: Execute exact tree audit against Messaging Intel test org
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        env:
+          ORES_CLI_TEST_INTERFACE_REPO: ${{ github.workspace }}/test-repos/messaging-intel
+        run: cargo +1.95.0 test --locked --test contract_tree_external -- --nocapture
+
+      - name: Execute exact tree audit against Opto Sync test org
+        working-directory: certificate/canaries/ores-cli-contract-tree
+        env:
+          ORES_CLI_TEST_INTERFACE_REPO: ${{ github.workspace }}/test-repos/opto-sync
+        run: cargo +1.95.0 test --locked --test contract_tree_external -- --nocapture
+
+      - name: Prove all authored fixtures and certificate source remained immutable
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C test-repos/3fa diff --exit-code -- .
+          git -C test-repos/claritas diff --exit-code -- .
+          git -C test-repos/messaging-intel diff --exit-code -- .
+          git -C test-repos/opto-sync diff --exit-code -- .
+          git -C certificate diff --exit-code -- .
