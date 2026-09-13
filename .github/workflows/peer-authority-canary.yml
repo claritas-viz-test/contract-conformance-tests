@@ -41,7 +41,7 @@ jobs:
           node-version: 22.16.0
 
       - name: Compile TypeSpec to Schema B and compare independent split peers
-        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        uses: ORESoftware/typespec-json-schema-validator@c5392b03a405bb5296d1de09ac785b3b097529cd
         with:
           typespec: contracts/peer-authority-canary/typespec/main.tsp
           schema: contracts/peer-authority-canary/json-schema/authored.schema.json
@@ -53,7 +53,7 @@ jobs:
           seal_object_schemas: "true"
 
       - name: Verify Contract IR against all three exact current inputs
-        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        uses: ORESoftware/typespec-json-schema-validator/actions/test-consumer-admission@c5392b03a405bb5296d1de09ac785b3b097529cd
         with:
           contract_ir: .typespec-json-schema-validator/canary/contract-ir.json
           report: .typespec-json-schema-validator/canary/report.json
@@ -153,7 +153,7 @@ jobs:
       - name: Reject TypeSpec-only split-lane drift
         id: typespec_drift
         continue-on-error: true
-        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        uses: ORESoftware/typespec-json-schema-validator@c5392b03a405bb5296d1de09ac785b3b097529cd
         with:
           typespec: ${{ runner.temp }}/claritas-split-typespec-drift/main.tsp
           schema: contracts/peer-authority-canary/json-schema/authored.schema.json
@@ -196,7 +196,7 @@ jobs:
       - name: Reject JSON-Schema-only split-lane drift
         id: json_drift
         continue-on-error: true
-        uses: ORESoftware/typespec-json-schema-validator@93dd73cb246a09b0a1c62d7192cc62ca6ecbe405
+        uses: ORESoftware/typespec-json-schema-validator@c5392b03a405bb5296d1de09ac785b3b097529cd
         with:
           typespec: contracts/peer-authority-canary/typespec/main.tsp
           schema: ${{ runner.temp }}/claritas-split-json-drift/authored.schema.json
