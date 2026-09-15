@@ -1,0 +1,8 @@
+{
+  "source_repo": "claritas-viz/claritas-infra",
+  "source_head_sha": "ebd8176cf4f6dc557c4c1e04bd0ea44a87b3b9eb",
+  "files": {
+    "fixtures/counterpart-snapshot/claritas-infra/contracts/infra-gitops/main.tsp": "e428237547ceb588d788f0bff597478174519f58",
+    "fixtures/counterpart-snapshot/claritas-infra/contracts/infra-gitops/authored.schema.json": "fd6f1b60b2a2cb22c1ce75801bdef21d5ad05b8c"
+  }
+}
