@@ -29,8 +29,8 @@ jobs:
           channel: stable
           flutter-version: "3.47.0"
           cache: true
-      - name: Resolve SDK dependencies
-        run: flutter pub get
+      - name: Resolve the locked package graph
+        run: flutter pub get --enforce-lockfile
       - name: Check formatting
         run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze
