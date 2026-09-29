@@ -35,7 +35,7 @@ jobs:
           test "$(git hash-object "$root/lib/claritas_flutter.dart")" = 'f8d6551434b764266f3a1e234f47b6fd332b5eec'
           test "$(git hash-object "$root/lib/src/claritas_surface.dart")" = '41fba1d113317ca33d4631db7fdec0b24a73503f'
           test "$(git hash-object "$root/test/claritas_surface_test.dart")" = '635a53944b5463ddb0d9f8045baf4312fb8c9fe6'
-          test "$(git hash-object "$root/ci.yml")" = '8f83bd842485281810e81cbdb18bd491b8768aa2'
+          test "$(git hash-object "$root/ci.yml")" = 'b8e3ead57e46ca3e1dfa4b719da53234ef8aa2a7'
       - name: Actionlint exact final workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
