@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,21 +21,22 @@ jobs:
       - name: Check out proof carrier
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: true
+          persist-credentials: false
           fetch-depth: 1
-      - name: Bind the candidate blobs before generated hardening
+      - name: Bind every final source blob exactly
         shell: bash
         run: |
           set -euo pipefail
           root=proof/claritas-flutter
-          test "$(git hash-object "$root/.gitignore")" = '6a7685a4b2fe5341c5bf08a36a5dcbdc79fbc200'
+          test "$(git hash-object "$root/.gitignore")" = 'b08b3bb4bf0c3776a51186f6729642fe87ca1986'
           test "$(git hash-object "$root/README.md")" = 'f35b09cffa4556194355c87e335800c4e18c23e0'
           test "$(git hash-object "$root/pubspec.yaml")" = '59284e9d877514412868948c6236bff9376ee174'
+          test "$(git hash-object "$root/pubspec.lock")" = '3c38b14aaf4d8cd930538cecfc05e884872b33d7'
           test "$(git hash-object "$root/lib/claritas_flutter.dart")" = 'f8d6551434b764266f3a1e234f47b6fd332b5eec'
-          test "$(git hash-object "$root/lib/src/claritas_surface.dart")" = '6168bce45c279b12f248007644a001e6cfa2c78f'
+          test "$(git hash-object "$root/lib/src/claritas_surface.dart")" = '41fba1d113317ca33d4631db7fdec0b24a73503f'
           test "$(git hash-object "$root/test/claritas_surface_test.dart")" = '635a53944b5463ddb0d9f8045baf4312fb8c9fe6'
-          test "$(git hash-object "$root/ci.yml")" = '739afaa969c9675f9d33113c414c6da25d266274'
-      - name: Actionlint candidate workflow
+          test "$(git hash-object "$root/ci.yml")" = '8f83bd842485281810e81cbdb18bd491b8768aa2'
+      - name: Actionlint exact final workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
           args: proof/claritas-flutter/ci.yml
@@ -45,16 +46,10 @@ jobs:
           channel: stable
           flutter-version: "3.47.0"
           cache: true
-      - name: Resolve and freeze SDK dependencies
+      - name: Resolve the locked package graph
         working-directory: proof/claritas-flutter
-        run: |
-          flutter pub get
-          test -s pubspec.lock
-          flutter pub get --enforce-lockfile
-      - name: Canonicalize Dart source
-        working-directory: proof/claritas-flutter
-        run: dart format lib test
-      - name: Prove formatting is stable
+        run: flutter pub get --enforce-lockfile
+      - name: Check formatting
         working-directory: proof/claritas-flutter
         run: dart format --output=none --set-exit-if-changed lib test
       - name: Analyze package
@@ -63,19 +58,5 @@ jobs:
       - name: Run unit and widget tests
         working-directory: proof/claritas-flutter
         run: flutter test
-      - name: Persist only proven deterministic artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          root=proof/claritas-flutter
-          git diff --check -- "$root/lib" "$root/test"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$root/lib" "$root/test"
-          git add -f "$root/pubspec.lock"
-          if git diff --cached --quiet; then
-            echo 'candidate already canonical and locked'
-            exit 0
-          fi
-          git commit -m 'test: capture proven Claritas Flutter candidate'
-          git push origin HEAD:proof/claritas-flutter-bootstrap-20260928
+      - name: Prove verification left candidate bytes unchanged
+        run: git diff --exit-code -- proof/claritas-flutter
