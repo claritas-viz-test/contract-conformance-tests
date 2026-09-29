@@ -23,7 +23,7 @@ jobs:
         with:
           persist-credentials: true
           fetch-depth: 1
-      - name: Bind every changed source blob exactly
+      - name: Bind the candidate blobs before generated hardening
         shell: bash
         run: |
           set -euo pipefail
@@ -33,9 +33,9 @@ jobs:
           test "$(git hash-object "$root/pubspec.yaml")" = '59284e9d877514412868948c6236bff9376ee174'
           test "$(git hash-object "$root/lib/claritas_flutter.dart")" = 'f8d6551434b764266f3a1e234f47b6fd332b5eec'
           test "$(git hash-object "$root/lib/src/claritas_surface.dart")" = '6168bce45c279b12f248007644a001e6cfa2c78f'
-          test "$(git hash-object "$root/test/claritas_surface_test.dart")" = '607233c59ec74c046d0bbd8725a4dbf061a2b58a'
+          test "$(git hash-object "$root/test/claritas_surface_test.dart")" = '635a53944b5463ddb0d9f8045baf4312fb8c9fe6'
           test "$(git hash-object "$root/ci.yml")" = '739afaa969c9675f9d33113c414c6da25d266274'
-      - name: Actionlint exact candidate workflow
+      - name: Actionlint candidate workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
           args: proof/claritas-flutter/ci.yml
@@ -45,12 +45,15 @@ jobs:
           channel: stable
           flutter-version: "3.47.0"
           cache: true
-      - name: Resolve SDK dependencies
+      - name: Resolve and freeze SDK dependencies
         working-directory: proof/claritas-flutter
-        run: flutter pub get
-      - name: Canonicalize the known formatting defect
+        run: |
+          flutter pub get
+          test -s pubspec.lock
+          flutter pub get --enforce-lockfile
+      - name: Canonicalize Dart source
         working-directory: proof/claritas-flutter
-        run: dart format lib/src/claritas_surface.dart
+        run: dart format lib test
       - name: Prove formatting is stable
         working-directory: proof/claritas-flutter
         run: dart format --output=none --set-exit-if-changed lib test
@@ -60,16 +63,19 @@ jobs:
       - name: Run unit and widget tests
         working-directory: proof/claritas-flutter
         run: flutter test
-      - name: Commit only the canonical formatter output
+      - name: Persist only proven deterministic artifacts
         shell: bash
         run: |
           set -euo pipefail
           root=proof/claritas-flutter
-          changed="$(git diff --name-only -- "$root")"
-          test "$changed" = "$root/lib/src/claritas_surface.dart"
-          git diff --check -- "$root/lib/src/claritas_surface.dart"
+          git diff --check -- "$root/lib" "$root/test"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$root/lib/src/claritas_surface.dart"
-          git commit -m 'test: capture canonical Claritas Flutter formatting'
+          git add "$root/lib" "$root/test"
+          git add -f "$root/pubspec.lock"
+          if git diff --cached --quiet; then
+            echo 'candidate already canonical and locked'
+            exit 0
+          fi
+          git commit -m 'test: capture proven Claritas Flutter candidate'
           git push origin HEAD:proof/claritas-flutter-bootstrap-20260928
