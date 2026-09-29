@@ -38,6 +38,15 @@ jobs:
             actual=$(git hash-object "$root/$rel")
             test "$actual" = "$expected"
           done
+
+          phase_root="$root/sonus-auris-lib"
+          {
+            cat "$phase_root/phase0.part1.txt"
+            printf '\n'
+            cat "$phase_root/phase0.part2.txt"
+            printf '\n'
+          } > "$phase_root/phase0-boundary-cost.yml"
+          test "$(git hash-object "$phase_root/phase0-boundary-cost.yml")" = '80e8ff3cb112c0dff2f3f549959383870d1d5863'
       - name: Validate exact candidate workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
         with:
@@ -45,6 +54,7 @@ jobs:
             proof/fleet-hardening-20260928/claritas-sync/ci.yml
             proof/fleet-hardening-20260928/claritas-sync/ores-trace-contract.yml
             proof/fleet-hardening-20260928/sonus-auris-lib/ci.yml
+            proof/fleet-hardening-20260928/sonus-auris-lib/phase0-boundary-cost.yml
       - name: Prove Claritas bounds and cancellation
         shell: bash
         run: |
@@ -74,4 +84,17 @@ jobs:
           grep -Fq 'GIT_CONFIG_VALUE_0: https://github.com/' "$f"
           ! grep -Fq 'git config --global' "$f"
           test "$(grep -c 'timeout-minutes:' "$f")" -eq 7
+          grep -Fq 'contents: read' "$f"
+      - name: Prove Sonus phase0 auth scoping, pins, and bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=proof/fleet-hardening-20260928/sonus-auris-lib/phase0-boundary-cost.yml
+          grep -Fq 'cancel-in-progress: true' "$f"
+          test "$(grep -c 'timeout-minutes: 30' "$f")" -eq 2
+          test "$(grep -c 'toolchain: 1.88.0' "$f")" -eq 2
+          test "$(grep -c 'GIT_CONFIG_COUNT=1' "$f")" -eq 2
+          test "$(grep -c 'test -n "$TOKEN"' "$f")" -eq 2
+          ! grep -Fq 'git config --global' "$f"
+          grep -Fq 'cargo install wasm-pack --version 0.15.0 --locked' "$f"
           grep -Fq 'contents: read' "$f"
