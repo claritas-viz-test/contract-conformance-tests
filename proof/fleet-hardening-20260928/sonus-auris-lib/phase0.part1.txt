@@ -1,0 +1,75 @@
+name: phase0-boundary-cost
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/phase0-boundary-cost.yml"
+      - "benchmarks/phase0/**"
+      - "docs/phase0-boundary-cost.md"
+      - "rust/crates/sonus-auris-lib/**"
+      - "rust/crates/sonus-auris-lib-ffi/**"
+      - "rust/crates/sonus-auris-lib-wasm/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  native-and-ffi:
+    name: native and FFI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+      - uses: dart-lang/setup-dart@6afc89df92d6eb3834022f73cd65adc8cdfcb92d # v1
+        with:
+          sdk: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: rust
+
+      - name: Measure native and C ABI dispatch
+        env:
+          TOKEN: ${{ secrets.SONUS_AURIS_INTERFACES_TOKEN }}
+        run: |
+          test -n "$TOKEN"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${TOKEN}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          mkdir -p ../phase0-results
+          cargo run --release --locked -p sonus-auris-lib \
+            --example phase0_boundary_cost > ../phase0-results/native.json
+          cargo run --release --locked -p sonus-auris-lib-ffi \
+            --example phase0_ffi_cost > ../phase0-results/ffi.json
+          cargo build --release --locked -p sonus-auris-lib-ffi --lib
+
+      - name: Record artifact size and prove Dart ABI gating
+        run: |
+          case "$RUNNER_OS" in
+            Linux) library=target/release/libsonus_auris_lib_ffi.so ;;
+            macOS) library=target/release/libsonus_auris_lib_ffi.dylib ;;
+            Windows) library=target/release/sonus_auris_lib_ffi.dll ;;
+            *) exit 64 ;;
+          esac
+          python3 -c 'import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); print(json.dumps({"artifact":str(p),"bytes":p.stat().st_size}))' \
+            "$library" > ../phase0-results/ffi-size.json
