@@ -1,0 +1,17 @@
+tmp/
+temp/
+tmp/worktrees
+temp/worktrees
+
+# machine-local symlink to ORESoftware/my-ai AGENTS.md; never committed
+.ores/
+
+# Dart / Flutter generated state
+.dart_tool/
+.packages
+.pub/
+build/
+coverage/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
