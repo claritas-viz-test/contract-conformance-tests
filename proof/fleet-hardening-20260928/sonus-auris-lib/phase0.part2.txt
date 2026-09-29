@@ -1,0 +1,77 @@
+          dart run ../benchmarks/phase0/dart_ffi_smoke.dart "$library" 1
+          if dart run ../benchmarks/phase0/dart_ffi_smoke.dart "$library" 2; then
+            echo "intentional ABI mismatch was accepted"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase0-native-${{ runner.os }}-${{ runner.arch }}
+          path: phase0-results
+
+  wasm-browser:
+    name: Wasm and real Chrome
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: rust
+
+      - name: Build the exact web package
+        env:
+          TOKEN: ${{ secrets.SONUS_AURIS_INTERFACES_TOKEN }}
+        run: |
+          test -n "$TOKEN"
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://x-access-token:${TOKEN}@github.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://github.com/"
+          cargo install wasm-pack --version 0.15.0 --locked
+          wasm-pack build rust/crates/sonus-auris-lib-wasm \
+            --release --target web
+
+      - name: Measure Node and browser execution
+        run: |
+          mkdir -p phase0-results
+          node benchmarks/phase0/wasm_cost.mjs > phase0-results/wasm-node.json
+          google-chrome --version > phase0-results/chrome-version.txt
+          python3 -m http.server 8765 --bind 127.0.0.1 \
+            > phase0-results/http-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          for attempt in {1..20}; do
+            if curl --fail --silent --output /dev/null \
+              http://127.0.0.1:8765/benchmarks/phase0/browser.html; then
+              break
+            fi
+            if [ "$attempt" = 20 ]; then
+              echo "local browser fixture server did not become ready"
+              exit 1
+            fi
+            sleep 0.25
+          done
+          google-chrome --headless=new --disable-gpu --no-first-run \
+            --dump-dom --virtual-time-budget=30000 \
+            http://127.0.0.1:8765/benchmarks/phase0/browser.html \
+            > phase0-results/browser.html
+          grep -q 'data-complete="true"' phase0-results/browser.html
+
+      - name: Record compressed package sizes
+        run: |
+          python3 -c 'import gzip,json,pathlib; p=pathlib.Path("rust/crates/sonus-auris-lib-wasm/pkg/sonus_auris_lib_wasm_bg.wasm"); data=p.read_bytes(); print(json.dumps({"artifact":str(p),"raw_bytes":len(data),"gzip_9_bytes":len(gzip.compress(data,compresslevel=9))}))' \
+            > phase0-results/wasm-size.json
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase0-wasm-${{ runner.os }}-${{ runner.arch }}
+          path: phase0-results
