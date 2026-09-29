@@ -1,0 +1,77 @@
+name: Prove Claritas and Sonus fleet hardening exact blobs
+
+on:
+  push:
+    branches:
+      - proof/fleet-hardening-20260928-cross-org
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  certify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact proof carrier head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Decode and bind exact private product blobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=proof/fleet-hardening-20260928
+          for spec in \
+            'claritas-sync/ci.yml 64aa675d0664da64ee8da99cd5bf57118c8d466d' \
+            'claritas-sync/ores-trace-contract.yml fb6ea675fcc3671bada95e83a767c80bc50d1f6d' \
+            'sonus-auris-lib/ci.yml 04f5a0cd0a21563312b62554f1b55f48a19571ae'; do
+            rel=${spec% *}
+            expected=${spec##* }
+            base64 -d "$root/$rel.b64" > "$root/$rel"
+            actual=$(git hash-object "$root/$rel")
+            test "$actual" = "$expected"
+          done
+      - name: Validate exact candidate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: >-
+            proof/fleet-hardening-20260928/claritas-sync/ci.yml
+            proof/fleet-hardening-20260928/claritas-sync/ores-trace-contract.yml
+            proof/fleet-hardening-20260928/sonus-auris-lib/ci.yml
+      - name: Prove Claritas bounds and cancellation
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=proof/fleet-hardening-20260928/claritas-sync
+          ci="$root/ci.yml"
+          trace="$root/ores-trace-contract.yml"
+          grep -Fq 'cancel-in-progress: true' "$ci"
+          grep -Fq 'timeout-minutes: 20' "$ci"
+          test "$(grep -c 'timeout-minutes: 15' "$ci")" -eq 2
+          grep -Fq 'cancel-in-progress: true' "$trace"
+          grep -Fq 'timeout-minutes: 10' "$trace"
+          for f in "$ci" "$trace"; do
+            grep -Fq 'contents: read' "$f"
+            ! grep -Eq 'uses: [^@[:space:]]+@(main|master|stable|v[0-9]+)$' "$f"
+          done
+      - name: Prove Sonus primary conformance auth scoping and pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          f=proof/fleet-hardening-20260928/sonus-auris-lib/ci.yml
+          grep -Fq 'cancel-in-progress: true' "$f"
+          grep -Fq 'toolchain: 1.88.0' "$f"
+          grep -Fq 'dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30' "$f"
+          grep -Fq 'GIT_CONFIG_COUNT: "1"' "$f"
+          grep -Fq 'GIT_CONFIG_KEY_0:' "$f"
+          grep -Fq 'GIT_CONFIG_VALUE_0: https://github.com/' "$f"
+          ! grep -Fq 'git config --global' "$f"
+          test "$(grep -c 'timeout-minutes:' "$f")" -eq 9
+          grep -Fq 'contents: read' "$f"
