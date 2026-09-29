@@ -21,7 +21,7 @@ void main() {
     expect(find.text('chart fixture'), findsOneWidget);
 
     final semantics = tester.widget<Semantics>(find.byType(Semantics));
-    expect(semantics.properties.container, isTrue);
+    expect(semantics.container, isTrue);
     expect(semantics.properties.label, 'Revenue visualization');
   });
 }
