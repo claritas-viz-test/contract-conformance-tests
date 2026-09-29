@@ -73,5 +73,5 @@ jobs:
           grep -Fq 'GIT_CONFIG_KEY_0:' "$f"
           grep -Fq 'GIT_CONFIG_VALUE_0: https://github.com/' "$f"
           ! grep -Fq 'git config --global' "$f"
-          test "$(grep -c 'timeout-minutes:' "$f")" -eq 9
+          test "$(grep -c 'timeout-minutes:' "$f")" -eq 7
           grep -Fq 'contents: read' "$f"
