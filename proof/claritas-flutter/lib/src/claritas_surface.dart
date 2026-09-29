@@ -19,10 +19,6 @@ class ClaritasSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      container: true,
-      label: semanticLabel,
-      child: child,
-    );
+    return Semantics(container: true, label: semanticLabel, child: child);
   }
 }
